@@ -7,6 +7,7 @@
 import processTpl, { genLinkReplaceSymbol, genScriptReplaceSymbol, processCssContent } from './process-tpl';
 import {
 	defaultGetPublicPath,
+	evalCode,
 	getGlobalProp,
 	getInlineCode,
 	noteGlobalProps,
@@ -17,6 +18,7 @@ import {
 const styleCache = {};
 const scriptCache = {};
 const embedHTMLCache = {};
+
 if (!window.fetch) {
 	throw new Error('[import-html-entry] Here is no "fetch" on the window env, you need to polyfill it');
 }
@@ -40,8 +42,8 @@ function getEmbedHTML(template, styles, opts = {}) {
 	return getExternalStyleSheets(styles, fetch)
 		.then(styleSheets => {
 			embedHTML = styles.reduce((html, styleSrc, i) => {
-				const styleText = processCssContent(styleSrc, styleSheets[i]);
-				html = html.replace(genLinkReplaceSymbol(styleSrc), "<style>/* ".concat(styleSrc, " */").concat(styleText, "</style>"));
+        const styleText = processCssContent(styleSrc, styleSheets[i]);
+				html = html.replace(genLinkReplaceSymbol(styleSrc), isInlineCode(styleSrc) ? `${styleSrc}` : "<style>/* ".concat(styleSrc, " */").concat(styleText, "</style>"));
 				return html;
 			}, embedHTML);
 			return embedHTML;
@@ -50,8 +52,12 @@ function getEmbedHTML(template, styles, opts = {}) {
 
 const isInlineCode = code => code.startsWith('<');
 
-function getExecutableScript(scriptSrc, scriptText, proxy, strictGlobal) {
+function getExecutableScript(scriptSrc, scriptText, opts = {}) {
+	const { proxy, strictGlobal, scopedGlobalVariables = [] } = opts;
+
 	const sourceUrl = isInlineCode(scriptSrc) ? '' : `//# sourceURL=${scriptSrc}\n`;
+	// 将 scopedGlobalVariables 拼接成 var 声明，用于缓存全局变量，避免每次使用时都走一遍代理
+	const scopedGlobalVariablesDeclaration = scopedGlobalVariables.length ? scopedGlobalVariables.map(key => `var ${key} = window.${key}`).join(';') : '';
 
 	// 通过这种方式获取全局 window，因为 script 也是在全局作用域下运行的，所以我们通过 window.proxy 绑定时也必须确保绑定到全局 window 上
 	// 否则在嵌套场景下， window.proxy 设置的是内层应用的 window，而代码其实是在全局作用域运行的，会导致闭包里的 window.proxy 取的是最外层的微应用的 proxy
@@ -59,7 +65,7 @@ function getExecutableScript(scriptSrc, scriptText, proxy, strictGlobal) {
 	globalWindow.proxy = proxy;
 	// TODO 通过 strictGlobal 方式切换 with 闭包，待 with 方式坑趟平后再合并
 	return strictGlobal
-		? `;(function(window, self, globalThis){with(window){;${scriptText}\n${sourceUrl}}}).bind(window.proxy)(window.proxy, window.proxy, window.proxy);`
+		? `;(function(window, self, globalThis){with(window){${scopedGlobalVariablesDeclaration};${scriptText}\n${sourceUrl}}}).bind(window.proxy)(window.proxy, window.proxy, window.proxy);`
 		: `;(function(window, self, globalThis){;${scriptText}\n${sourceUrl}}).bind(window.proxy)(window.proxy, window.proxy, window.proxy);`;
 }
 
@@ -153,6 +159,7 @@ export function execScripts(entry, scripts, proxy = window, opts = {}) {
 		}, beforeExec = () => {
 		}, afterExec = () => {
 		},
+		scopedGlobalVariables = [],
 	} = opts;
 
 	return getExternalScripts(scripts, fetch, error)
@@ -160,9 +167,9 @@ export function execScripts(entry, scripts, proxy = window, opts = {}) {
 
 			const geval = (scriptSrc, inlineScript) => {
 				const rawCode = beforeExec(inlineScript, scriptSrc) || inlineScript;
-				const code = getExecutableScript(scriptSrc, rawCode, proxy, strictGlobal);
+				const code = getExecutableScript(scriptSrc, rawCode, { proxy, strictGlobal, scopedGlobalVariables });
 
-				(0, eval)(code);
+				evalCode(scriptSrc, code);
 
 				afterExec(inlineScript, scriptSrc);
 			};
@@ -240,6 +247,7 @@ export default function importHTML(url, opts = {}) {
 	let autoDecodeResponse = false;
 	let getPublicPath = defaultGetPublicPath;
 	let getTemplate = defaultGetTemplate;
+	const { postProcessTemplate } = opts;
 
 	// compatible with the legacy importHTML api
 	if (typeof opts === 'function') {
@@ -264,22 +272,21 @@ export default function importHTML(url, opts = {}) {
 		.then(html => {
 
 			const assetPublicPath = getPublicPath(url);
-			const { template, scripts, entry, styles } = processTpl(getTemplate(html), assetPublicPath);
+			const { template, scripts, entry, styles } = processTpl(getTemplate(html), assetPublicPath, postProcessTemplate);
 
 			return getEmbedHTML(template, styles, { fetch }).then(embedHTML => ({
 				template: embedHTML,
 				assetPublicPath,
 				getExternalScripts: () => getExternalScripts(scripts, fetch),
 				getExternalStyleSheets: () => getExternalStyleSheets(styles, fetch),
-				execScripts: (proxy, strictGlobal, execScriptsHooks = {}) => {
+				execScripts: (proxy, strictGlobal, opts = {}) => {
 					if (!scripts.length) {
 						return Promise.resolve();
 					}
 					return execScripts(entry, scripts, proxy, {
 						fetch,
 						strictGlobal,
-						beforeExec: execScriptsHooks.beforeExec,
-						afterExec: execScriptsHooks.afterExec,
+						...opts,
 					});
 				},
 			}));
@@ -287,7 +294,7 @@ export default function importHTML(url, opts = {}) {
 }
 
 export function importEntry(entry, opts = {}) {
-	const { fetch = defaultFetch, getTemplate = defaultGetTemplate } = opts;
+	const { fetch = defaultFetch, getTemplate = defaultGetTemplate, postProcessTemplate } = opts;
 	const getPublicPath = opts.getPublicPath || opts.getDomain || defaultGetPublicPath;
 
 	if (!entry) {
@@ -300,6 +307,7 @@ export function importEntry(entry, opts = {}) {
 			fetch,
 			getPublicPath,
 			getTemplate,
+			postProcessTemplate,
 		});
 	}
 
@@ -315,15 +323,14 @@ export function importEntry(entry, opts = {}) {
 			assetPublicPath: getPublicPath(entry),
 			getExternalScripts: () => getExternalScripts(scripts, fetch),
 			getExternalStyleSheets: () => getExternalStyleSheets(styles, fetch),
-			execScripts: (proxy, strictGlobal, execScriptsHooks = {}) => {
+			execScripts: (proxy, strictGlobal, opts = {}) => {
 				if (!scripts.length) {
 					return Promise.resolve();
 				}
 				return execScripts(scripts[scripts.length - 1], scripts, proxy, {
 					fetch,
 					strictGlobal,
-					beforeExec: execScriptsHooks.beforeExec,
-					afterExec: execScriptsHooks.afterExec,
+					...opts,
 				});
 			},
 		}));

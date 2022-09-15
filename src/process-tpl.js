@@ -83,10 +83,11 @@ export const processCssContent = (styleSrc, styleText) => {
  *    see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/eval#Do_not_ever_use_eval!
  * @param tpl
  * @param baseURI
+ * @param postProcessTemplate
  * @stripStyles whether to strip the css links
  * @returns {{template: void | string | *, scripts: *[], entry: *}}
  */
-export default function processTpl(tpl, baseURI) {
+export default function processTpl(tpl, baseURI, postProcessTemplate) {
 
 	let scripts = [];
 	const styles = [];
@@ -219,11 +220,16 @@ export default function processTpl(tpl, baseURI) {
 		return !!script;
 	});
 
-	return {
+	let tplResult = {
 		template,
 		scripts,
 		styles,
 		// set the last script as entry if have not set
 		entry: entry || scripts[scripts.length - 1],
 	};
+	if (typeof postProcessTemplate === 'function') {
+		tplResult = postProcessTemplate(tplResult);
+	}
+
+	return tplResult;
 }

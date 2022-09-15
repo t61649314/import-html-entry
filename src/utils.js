@@ -86,8 +86,7 @@ export function defaultGetPublicPath(entry) {
 		return '/';
 	}
 	try {
-		// URL 构造函数不支持使用 // 前缀的 url
-		const { origin, pathname } = new URL(entry.startsWith('//') ? `${location.protocol}${entry}` : entry, location.href);
+		const { origin, pathname } = new URL(entry, location.href);
 		const paths = pathname.split('/');
 		// 移除最后一个元素
 		paths.pop();
@@ -165,4 +164,18 @@ export function readResAsString(response, autoDetectCharset) {
 			reader.onerror = reject;
 			reader.readAsText(file, charset);
 		}));
+}
+
+const evalCache = {};
+
+export function evalCode(scriptSrc, code) {
+	const key = scriptSrc;
+	if (!evalCache[key]) {
+		const functionWrappedCode = `window.__TEMP_EVAL_FUNC__ = function(){${code}}`;
+		(0, eval)(functionWrappedCode);
+		evalCache[key] = window.__TEMP_EVAL_FUNC__;
+		delete window.__TEMP_EVAL_FUNC__;
+	}
+	const evalFunc = evalCache[key];
+	evalFunc.call(window);
 }
