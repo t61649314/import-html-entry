@@ -4,6 +4,7 @@ import processTpl, {
 	genLinkReplaceSymbol,
 	genModuleScriptReplaceSymbol,
 	genScriptReplaceSymbol,
+	processCssContent,
 } from '../process-tpl';
 
 test('test process-tpl', () => {
@@ -14,6 +15,8 @@ test('test process-tpl', () => {
 		'<link rel="preload" href="//gw.alipayobjects.com/as/g/antcloud-fe/antd-cloud-nav/0.2.22/antd-cloud-nav.min.js">\n' +
 		'<link rel="prefetch" href="/a3-ie6-polyfill.js">\n' +
 		'<link rel="stylesheet" href="/umi.css">\n' +
+		'<link jumpqiankun rel="stylesheet" href="//test.jump.com/1.css">\n' +
+		'<link jumpqiankun  rel="stylesheet" href="//test.jump.com/2.css">\n' +
 		'<link rel="preload" as="font" href="/static/fonts/iconfont.woff" type="font/woff" crossorigin="anonymous">\n' +
 		'\n' +
 		'<meta charset="utf-8">\n' +
@@ -112,7 +115,8 @@ test('test process-tpl', () => {
 	const { styles, template: template2 } = processTpl(tpl, 'http://kuitos.me/cdn/');
 	expect(styles[0]).toBe('http://kuitos.me/umi.css');
 	expect(template2.indexOf(genLinkReplaceSymbol('http://kuitos.me/umi.css')) !== -1).toBeTruthy();
-
+	expect(template.indexOf('<link jumpqiankun rel="stylesheet" href="//test.jump.com/1.css">') > -1).toBeTruthy();
+	expect(template.indexOf('<link jumpqiankun  rel="stylesheet" href="//test.jump.com/2.css">') > -1).toBeTruthy();
 });
 
 test('test ignore js or css', () => {
@@ -317,4 +321,23 @@ test('should work with huge html content', () => {
 	processTpl(hugeHtmlContent, '//test.com');
 	const during = Date.now() - start;
 	expect(during < 1000).toBeTruthy();
+});
+
+test('test process url in external css resources', () => {
+	const transformedStyleText = processCssContent('//cdntest.com/css/ui.css', `
+		@import 'component1.css'
+		@import url('component2.less')
+		.test-notice {
+			background: #ffffff url(../images/bg1.jpg) no-repeat center left;
+			background-image: url( '../images/bg2.jpg' );
+			background-image: url("../images/bg3.jpg");
+		};
+		/*# sourceMappingURL=test-notice.css.map */
+	`);
+	expect(transformedStyleText.indexOf('//cdntest.com/css/component1.css') !== -1).toBeTruthy();
+	expect(transformedStyleText.indexOf('//cdntest.com/css/component2.less') !== -1).toBeTruthy();
+	expect(transformedStyleText.indexOf('//cdntest.com/images/bg1.jpg') !== -1).toBeTruthy();
+	expect(transformedStyleText.indexOf('//cdntest.com/images/bg2.jpg') !== -1).toBeTruthy();
+	expect(transformedStyleText.indexOf('//cdntest.com/images/bg3.jpg') !== -1).toBeTruthy();
+	expect(transformedStyleText.indexOf('//cdntest.com/css/test-notice.css.map') !== -1).toBeTruthy();
 });

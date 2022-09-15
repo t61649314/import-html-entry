@@ -1,3 +1,4 @@
+基于社区kuitos import-html-entry，修复了部分问题。
 # import-html-entry
 Treats the index html as manifest and loads the assets(css,js), get the exports from entry script.
 

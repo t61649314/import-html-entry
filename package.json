@@ -1,6 +1,6 @@
 {
-  "name": "import-html-entry",
-  "version": "1.11.1",
+  "name": "@tencent/import-html-entry",
+  "version": "0.1.4",
   "description": "import html and get the exports of entry",
   "main": "./lib/index.js",
   "module": "./esm/index.js",
@@ -25,20 +25,12 @@
     "test": "jest --coverage",
     "codecov": "codecov"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/kuitos/import-html-entry.git"
-  },
   "keywords": [
     "html",
     "importer"
   ],
   "author": "Kuitos",
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/kuitos/import-html-entry/issues"
-  },
-  "homepage": "https://github.com/kuitos/import-html-entry#readme",
   "browserslist": [
     "> 1%",
     "last 6 versions",
